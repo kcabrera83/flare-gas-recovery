@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flare Gas Recovery Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0f172a; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+        .header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-bottom: 2px solid #22c55e; padding: 20px 40px; }
+        .header h1 { font-size: 1.8rem; color: #22c55e; }
+        .header p { color: #94a3b8; margin-top: 4px; font-size: 0.9rem; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 30px 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 24px; }
+        .card h2 { color: #22c55e; font-size: 1.1rem; margin-bottom: 16px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; color: #94a3b8; font-size: 0.85rem; margin-bottom: 4px; }
+        .form-group input { width: 100%; padding: 10px 12px; background: #0f172a; border: 1px solid #475569; border-radius: 6px; color: #e2e8f0; font-size: 0.95rem; }
+        .form-group input:focus { outline: none; border-color: #22c55e; box-shadow: 0 0 0 2px rgba(34,197,94,0.2); }
+        .btn { background: #22c55e; color: #0f172a; border: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.95rem; width: 100%; margin-top: 10px; }
+        .btn:hover { background: #16a34a; }
+        .results { margin-top: 16px; }
+        .result-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #334155; }
+        .result-item:last-child { border-bottom: none; }
+        .result-label { color: #94a3b8; }
+        .result-value { color: #22c55e; font-weight: 600; font-size: 1.05rem; }
+        .chart-container { position: relative; height: 250px; margin-top: 16px; }
+        .status-bar { display: flex; gap: 20px; margin-bottom: 20px; }
+        .status-item { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px 24px; flex: 1; text-align: center; }
+        .status-item .label { color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
+        .status-item .value { color: #22c55e; font-size: 1.4rem; font-weight: 700; margin-top: 4px; }
+        .error { color: #ef4444; font-size: 0.85rem; margin-top: 8px; }
+        .full-width { grid-column: 1 / -1; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Flare Gas Recovery Dashboard</h1>
+        <p>ML-based optimization of flare gas recovery systems</p>
+    </div>
+
+    <div class="container">
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="label">API Status</div>
+                <div class="value" id="apiStatus">--</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Models Loaded</div>
+                <div class="value" id="modelsLoaded">--</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Recovery Rate</div>
+                <div class="value" id="lastRecovery">--</div>
+            </div>
+            <div class="status-item">
+                <div class="label">CO2 Emissions</div>
+                <div class="value" id="lastEmissions">--</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2>Recovery Optimization</h2>
+                <form id="optimizeForm">
+                    <div class="form-group">
+                        <label>Flare Gas Rate (MCF)</label>
+                        <input type="number" id="flare_gas_rate_mcf" value="2500" step="100">
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                        <div class="form-group">
+                            <label>Methane %</label>
+                            <input type="number" id="methane_pct" value="75" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Ethane %</label>
+                            <input type="number" id="ethane_pct" value="12" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Propane %</label>
+                            <input type="number" id="propane_pct" value="6" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Butane %</label>
+                            <input type="number" id="butane_pct" value="3" step="1">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Ambient Temperature (C)</label>
+                        <input type="number" id="ambient_temp_c" value="25" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Wind Speed (m/s)</label>
+                        <input type="number" id="wind_speed_ms" value="5" step="0.5">
+                    </div>
+                    <div class="form-group">
+                        <label>Steam Injection Rate</label>
+                        <input type="number" id="steam_injection_rate" value="1.0" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>Flare Efficiency %</label>
+                        <input type="number" id="flare_efficiency_pct" value="85" step="1">
+                    </div>
+                    <button type="submit" class="btn">Optimize Recovery</button>
+                </form>
+                <div class="results" id="optimizeResults"></div>
+            </div>
+
+            <div class="card">
+                <h2>CO2 Emission Prediction</h2>
+                <div class="chart-container">
+                    <canvas id="emissionChart"></canvas>
+                </div>
+                <div class="results" id="emissionResults" style="margin-top: 16px;"></div>
+            </div>
+
+            <div class="card full-width">
+                <h2>Feature Importances</h2>
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="importanceChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let emissionChart, importanceChart;
+
+        function getInputValues() {
+            const fields = ['flare_gas_rate_mcf','methane_pct','ethane_pct','propane_pct','butane_pct',
+                           'ambient_temp_c','wind_speed_ms','steam_injection_rate','flare_efficiency_pct'];
+            const data = {};
+            fields.forEach(f => {
+                data[f] = parseFloat(document.getElementById(f).value) || 0;
+            });
+            return data;
+        }
+
+        async function checkHealth() {
+            try {
+                const r = await fetch('/api/health');
+                const d = await r.json();
+                document.getElementById('apiStatus').textContent = 'Online';
+                document.getElementById('modelsLoaded').textContent = d.models_loaded;
+            } catch(e) {
+                document.getElementById('apiStatus').textContent = 'Offline';
+            }
+        }
+
+        async function loadModels() {
+            try {
+                const r = await fetch('/api/models');
+                const d = await r.json();
+                if (d.feature_importances_recovery) {
+                    const names = Object.keys(d.feature_importances_recovery);
+                    const vals = Object.values(d.feature_importances_recovery);
+                    const emVals = Object.values(d.feature_importances_emission || {});
+                    const ctx = document.getElementById('importanceChart').getContext('2d');
+                    if (importanceChart) importanceChart.destroy();
+                    importanceChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: names.map(n => n.replace('_pct','').replace('_mcf','').replace('_ms','').replace('_c','')),
+                            datasets: [
+                                { label: 'Recovery', data: vals, backgroundColor: '#22c55e88', borderColor: '#22c55e', borderWidth: 1 },
+                                { label: 'Emissions', data: emVals, backgroundColor: '#ef444488', borderColor: '#ef4444', borderWidth: 1 }
+                            ]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            scales: { y: { beginAtZero: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+                                      x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } } },
+                            plugins: { legend: { labels: { color: '#e2e8f0' } } }
+                        }
+                    });
+                }
+            } catch(e) { console.error('Failed to load models:', e); }
+        }
+
+        async function fetchEmissions(data) {
+            try {
+                const r = await fetch('/api/emissions', {
+                    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+                });
+                const d = await r.json();
+                document.getElementById('lastEmissions').textContent = d.co2_emissions_tons + ' t';
+                updateEmissionChart(d.co2_emissions_tons, data.flare_gas_rate_mcf);
+                document.getElementById('emissionResults').innerHTML =
+                    `<div class="result-item"><span class="result-label">CO2 Emissions</span><span class="result-value">${d.co2_emissions_tons} tons/year</span></div>`;
+            } catch(e) {
+                document.getElementById('emissionResults').innerHTML = `<div class="error">${e.message}</div>`;
+            }
+        }
+
+        function updateEmissionChart(co2, rate) {
+            const ctx = document.getElementById('emissionChart').getContext('2d');
+            if (emissionChart) emissionChart.destroy();
+            emissionChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Emissions', 'Efficiency'],
+                    datasets: [{ data: [co2, Math.max(1, 100 - co2)], backgroundColor: ['#ef4444', '#22c55e'], borderWidth: 0 }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#e2e8f0' } } } }
+            });
+        }
+
+        document.getElementById('optimizeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = getInputValues();
+            try {
+                const r = await fetch('/api/optimize', {
+                    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+                });
+                const d = await r.json();
+                document.getElementById('lastRecovery').textContent = d.recovery_rate_mcf + ' MCF';
+                document.getElementById('optimizeResults').innerHTML = `
+                    <div class="result-item"><span class="result-label">Recovery Rate</span><span class="result-value">${d.recovery_rate_mcf} MCF/year</span></div>
+                    <div class="result-item"><span class="result-label">Economic Savings</span><span class="result-value">$${d.economic_savings_usd.toLocaleString()}</span></div>`;
+                await fetchEmissions(data);
+            } catch(err) {
+                document.getElementById('optimizeResults').innerHTML = `<div class="error">${err.message}</div>`;
+            }
+        });
+
+        checkHealth();
+        loadModels();
+        const data = getInputValues();
+        fetchEmissions(data);
+    </script>
+</body>
+</html>
