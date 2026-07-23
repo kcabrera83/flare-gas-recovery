@@ -1,31 +1,39 @@
+"""FastAPI for flare gas recovery optimization."""
+
 import json
 import os
 import pickle
-
 import numpy as np
-from flask import Flask, jsonify, render_template, request
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-app = Flask(__name__)
+app = FastAPI(
+    title="Flare Gas Recovery",
+    description="Flare gas recovery optimization and CO2 emission prediction",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 MODEL_DIR = os.path.join("outputs", "models")
 FEATURE_COLS = [
-    "flare_gas_rate_mcf",
-    "methane_pct",
-    "ethane_pct",
-    "propane_pct",
-    "butane_pct",
-    "ambient_temp_c",
-    "wind_speed_ms",
-    "steam_injection_rate",
-    "flare_efficiency_pct",
+    "flare_gas_rate_mcf", "methane_pct", "ethane_pct", "propane_pct",
+    "butane_pct", "ambient_temp_c", "wind_speed_ms",
+    "steam_injection_rate", "flare_efficiency_pct",
 ]
 
-# Load models at startup
 models = {}
 
 
-def load_models():
-    global models
+@app.on_event("startup")
+async def load_models():
     try:
         with open(os.path.join(MODEL_DIR, "recovery_optimizer.pkl"), "rb") as f:
             models["recovery_optimizer"] = pickle.load(f)
@@ -39,101 +47,80 @@ def load_models():
             models["scaler_savings"] = pickle.load(f)
         with open(os.path.join(MODEL_DIR, "scaler_emission.pkl"), "rb") as f:
             models["scaler_emission"] = pickle.load(f)
-
         with open(os.path.join(MODEL_DIR, "training_summary.json"), "r") as f:
             models["summary"] = json.load(f)
-        print(f"Loaded {len([k for k in models if 'optimizer' in k or 'predictor' in k])} models.")
     except Exception as e:
         print(f"WARNING: Could not load models: {e}")
 
 
 def extract_features(data):
-    return np.array(
-        [[data.get(col, 0) for col in FEATURE_COLS]]
-    )
+    return np.array([[data.get(col, 0) for col in FEATURE_COLS]])
 
 
-@app.route("/")
-def index():
-    return render_template("index.html")
+class GasRequest(BaseModel):
+    flare_gas_rate_mcf: float = 0
+    methane_pct: float = 0
+    ethane_pct: float = 0
+    propane_pct: float = 0
+    butane_pct: float = 0
+    ambient_temp_c: float = 0
+    wind_speed_ms: float = 0
+    steam_injection_rate: float = 0
+    flare_efficiency_pct: float = 0
 
 
-@app.route("/api/health")
-def health():
+class OptimizeResponse(BaseModel):
+    recovery_rate_mcf: float
+    economic_savings_usd: float
+    input: dict
+
+
+class EmissionsResponse(BaseModel):
+    co2_emissions_tons: float
+    input: dict
+
+
+@app.get("/api/health")
+async def health():
     loaded = len([k for k in models if k not in ("summary",)])
-    return jsonify({"status": "ok", "models_loaded": loaded})
+    return {"status": "ok", "models_loaded": loaded}
 
 
-@app.route("/api/models")
-def list_models():
-    info = {}
+@app.get("/api/models")
+async def models_info():
     if "summary" in models:
-        info = models["summary"]
-    else:
-        info = {"message": "No models loaded. Run train.py first."}
-    return jsonify(info)
+        return models["summary"]
+    return {"message": "No models loaded. Run train.py first."}
 
 
-@app.route("/api/optimize", methods=["POST"])
-def optimize():
+@app.post("/api/optimize", response_model=OptimizeResponse)
+async def optimize(request: GasRequest):
     try:
-        data = request.get_json(force=True)
+        data = request.model_dump()
         X = extract_features(data)
-
         X_rec = models["scaler_recovery"].transform(X)
         X_sav = models["scaler_savings"].transform(X)
-
-        recovery_rate = float(models["recovery_optimizer"].predict(X_rec)[0])
-        economic_savings = float(models["savings_optimizer"].predict(X_sav)[0])
-
-        recovery_rate = max(0, recovery_rate)
-        economic_savings = max(0, economic_savings)
-
-        return jsonify(
-            {
-                "recovery_rate_mcf": round(recovery_rate, 2),
-                "economic_savings_usd": round(economic_savings, 2),
-                "input": {col: data.get(col, 0) for col in FEATURE_COLS},
-            }
+        recovery_rate = max(0, float(models["recovery_optimizer"].predict(X_rec)[0]))
+        economic_savings = max(0, float(models["savings_optimizer"].predict(X_sav)[0]))
+        return OptimizeResponse(
+            recovery_rate_mcf=round(recovery_rate, 2),
+            economic_savings_usd=round(economic_savings, 2),
+            input={col: data.get(col, 0) for col in FEATURE_COLS},
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.route("/api/emissions", methods=["POST"])
-def emissions():
+@app.post("/api/emissions", response_model=EmissionsResponse)
+async def emissions(request: GasRequest):
     try:
-        data = request.get_json(force=True)
+        data = request.model_dump()
         X = extract_features(data)
         X_scaled = models["scaler_emission"].transform(X)
-
-        co2 = float(models["emission_predictor"].predict(X_scaled)[0])
-        co2 = max(0, co2)
-
-        return jsonify(
-            {
-                "co2_emissions_tons": round(co2, 2),
-                "input": {col: data.get(col, 0) for col in FEATURE_COLS},
-            }
+        co2 = max(0, float(models["emission_predictor"].predict(X_scaled)[0]))
+        return EmissionsResponse(
+            co2_emissions_tons=round(co2, 2),
+            input={col: data.get(col, 0) for col in FEATURE_COLS},
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-
-@app.route("/api/docs", methods=["GET"])
-def api_docs():
-    return jsonify({
-        "openapi": "3.0.0",
-        "info": {"title": "Flare Gas Recovery", "version": "1.0.0"},
-        "paths": {
-            "/api/health": {"get": {"summary": "Health check"}},
-            "/api/models": {"get": {"summary": "Model info"}},
-            "/api/optimize": {"post": {"summary": "Optimize recovery rate and economic savings"}},
-            "/api/emissions": {"post": {"summary": "Predict CO2 emissions in tons"}},
-        }
-    })
-
-
-if __name__ == "__main__":
-    load_models()
-    app.run(host="0.0.0.0", port=5011, debug=False)
+        raise HTTPException(status_code=400, detail=str(e))
