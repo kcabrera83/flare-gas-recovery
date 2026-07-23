@@ -1,6 +1,24 @@
 # Flare Gas Recovery
 
-ML-based optimization system for flare gas recovery in industrial operations.
+ML-based optimization system for flare gas recovery in industrial operations using distributed computing and high-performance data processing.
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Distributed Computing | **Dask** - parallel data processing |
+| High-Performance Data | **Polars** - fast DataFrame operations |
+| Data Processing | pandas, numpy, joblib |
+| Web Server | **FastAPI** + uvicorn |
+| Monitoring | prometheus-fastapi-instrumentator |
+| Validation | pydantic v2 |
+| Visualization | matplotlib, seaborn |
+
+### Key Libraries
+- Dask - Parallel and out-of-core computing
+- Polars - High-performance DataFrame library
+- FastAPI - Modern async web framework
+- pandas / numpy - Data processing
 
 ## Overview
 
@@ -9,7 +27,7 @@ predict CO2 emissions, and estimate economic savings from gas recovery systems.
 
 ### Models
 
-- **Recovery Optimizer** (GradientBoosting) - Predicts optimal recovery rate (MCF)
+- **Recovery Optimizer** (Dask + Polars pipeline) - Predicts optimal recovery rate (MCF)
   and economic savings (USD).
 - **Emission Predictor** (RandomForest) - Predicts CO2 emissions in tons.
 
@@ -21,7 +39,7 @@ python train.py
 python app.py
 ```
 
-The Flask API starts on port 5011.
+The FastAPI server starts on port 5011.
 
 ### API Endpoints
 
@@ -80,10 +98,6 @@ flare-gas-recovery/
 python test_api.py
 ```
 
-## License
-
-MIT
-
-## Author
+---
 
 Elaborado por Ing. Kelvin Cabrera
