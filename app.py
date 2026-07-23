@@ -1,9 +1,10 @@
-"""FastAPI for flare gas recovery optimization."""
+"""FastAPI for flare gas recovery optimization using Dask + Polars."""
 
 import json
 import os
 import pickle
 import numpy as np
+import polars as pl
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -11,8 +12,8 @@ from pydantic import BaseModel
 
 app = FastAPI(
     title="Flare Gas Recovery",
-    description="Flare gas recovery optimization and CO2 emission prediction",
-    version="1.0.0",
+    description="Flare gas recovery optimization and CO2 emission prediction (Dask + Polars)",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -44,12 +45,6 @@ async def load_models():
             models["savings_optimizer"] = pickle.load(f)
         with open(os.path.join(MODEL_DIR, "emission_predictor.pkl"), "rb") as f:
             models["emission_predictor"] = pickle.load(f)
-        with open(os.path.join(MODEL_DIR, "scaler_recovery.pkl"), "rb") as f:
-            models["scaler_recovery"] = pickle.load(f)
-        with open(os.path.join(MODEL_DIR, "scaler_savings.pkl"), "rb") as f:
-            models["scaler_savings"] = pickle.load(f)
-        with open(os.path.join(MODEL_DIR, "scaler_emission.pkl"), "rb") as f:
-            models["scaler_emission"] = pickle.load(f)
         with open(os.path.join(MODEL_DIR, "training_summary.json"), "r") as f:
             models["summary"] = json.load(f)
     except Exception as e:
@@ -86,7 +81,7 @@ class EmissionsResponse(BaseModel):
 @app.get("/api/health")
 async def health():
     loaded = len([k for k in models if k not in ("summary",)])
-    return {"status": "ok", "models_loaded": loaded}
+    return {"status": "ok", "models_loaded": loaded, "framework": "dask/polars"}
 
 
 @app.get("/api/models")
@@ -101,10 +96,8 @@ async def optimize(request: GasRequest):
     try:
         data = request.model_dump()
         X = extract_features(data)
-        X_rec = models["scaler_recovery"].transform(X)
-        X_sav = models["scaler_savings"].transform(X)
-        recovery_rate = max(0, float(models["recovery_optimizer"].predict(X_rec)[0]))
-        economic_savings = max(0, float(models["savings_optimizer"].predict(X_sav)[0]))
+        recovery_rate = max(0, float(models["recovery_optimizer"].predict(X)[0]))
+        economic_savings = max(0, float(models["savings_optimizer"].predict(X)[0]))
         return OptimizeResponse(
             recovery_rate_mcf=round(recovery_rate, 2),
             economic_savings_usd=round(economic_savings, 2),
@@ -119,8 +112,7 @@ async def emissions(request: GasRequest):
     try:
         data = request.model_dump()
         X = extract_features(data)
-        X_scaled = models["scaler_emission"].transform(X)
-        co2 = max(0, float(models["emission_predictor"].predict(X_scaled)[0]))
+        co2 = max(0, float(models["emission_predictor"].predict(X)[0]))
         return EmissionsResponse(
             co2_emissions_tons=round(co2, 2),
             input={col: data.get(col, 0) for col in FEATURE_COLS},
@@ -128,3 +120,24 @@ async def emissions(request: GasRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
+@app.post("/api/optimize_polars")
+async def optimize_polars(request: GasRequest):
+    """Polars-powered optimization endpoint."""
+    try:
+        data = request.model_dump()
+        df = pl.DataFrame(data)
+        result = df.with_columns([
+            (pl.col("flare_gas_rate_mcf") * pl.col("flare_efficiency_pct") / 100).alias("recovered_gas"),
+        ])
+        recovered = float(result["recovered_gas"][0])
+        X = extract_features(data)
+        recovery_rate = max(0, float(models["recovery_optimizer"].predict(X)[0]))
+        economic_savings = max(0, float(models["savings_optimizer"].predict(X)[0]))
+        return OptimizeResponse(
+            recovery_rate_mcf=round(recovery_rate, 2),
+            economic_savings_usd=round(economic_savings, 2),
+            input={col: data.get(col, 0) for col in FEATURE_COLS},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

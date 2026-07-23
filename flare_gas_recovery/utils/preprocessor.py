@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 
 
 FEATURE_COLS = [
@@ -22,22 +21,9 @@ SAVINGS_TARGET = "economic_savings_usd"
 
 
 def preprocess(df, target_col, test_size=0.2, random_state=42):
-    """Scale features and split into train/test sets.
+    """Split features and target into train/test sets.
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Full dataset.
-    target_col : str
-        Column name for the regression target.
-    test_size : float
-        Fraction of data reserved for testing.
-    random_state : int
-        Random seed.
-
-    Returns
-    -------
-    dict with keys: X_train, X_test, y_train, y_test, scaler, feature_names
+    Scaling is handled internally by Dask-ML models.
     """
     X = df[FEATURE_COLS].values
     y = df[target_col].values
@@ -46,15 +32,10 @@ def preprocess(df, target_col, test_size=0.2, random_state=42):
         X, y, test_size=test_size, random_state=random_state
     )
 
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
-
     return {
         "X_train": X_train,
         "X_test": X_test,
         "y_train": y_train,
         "y_test": y_test,
-        "scaler": scaler,
         "feature_names": FEATURE_COLS,
     }
