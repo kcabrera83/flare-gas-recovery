@@ -4,7 +4,6 @@ import json
 import os
 import pickle
 import numpy as np
-import polars as pl
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -115,28 +114,6 @@ async def emissions(request: GasRequest):
         co2 = max(0, float(models["emission_predictor"].predict(X)[0]))
         return EmissionsResponse(
             co2_emissions_tons=round(co2, 2),
-            input={col: data.get(col, 0) for col in FEATURE_COLS},
-        )
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.post("/api/optimize_polars")
-async def optimize_polars(request: GasRequest):
-    """Polars-powered optimization endpoint."""
-    try:
-        data = request.model_dump()
-        df = pl.DataFrame(data)
-        result = df.with_columns([
-            (pl.col("flare_gas_rate_mcf") * pl.col("flare_efficiency_pct") / 100).alias("recovered_gas"),
-        ])
-        recovered = float(result["recovered_gas"][0])
-        X = extract_features(data)
-        recovery_rate = max(0, float(models["recovery_optimizer"].predict(X)[0]))
-        economic_savings = max(0, float(models["savings_optimizer"].predict(X)[0]))
-        return OptimizeResponse(
-            recovery_rate_mcf=round(recovery_rate, 2),
-            economic_savings_usd=round(economic_savings, 2),
             input={col: data.get(col, 0) for col in FEATURE_COLS},
         )
     except Exception as e:
