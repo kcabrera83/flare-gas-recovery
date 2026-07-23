@@ -120,6 +120,20 @@ def emissions():
         return jsonify({"error": str(e)}), 400
 
 
+@app.route("/api/docs", methods=["GET"])
+def api_docs():
+    return jsonify({
+        "openapi": "3.0.0",
+        "info": {"title": "Flare Gas Recovery", "version": "1.0.0"},
+        "paths": {
+            "/api/health": {"get": {"summary": "Health check"}},
+            "/api/models": {"get": {"summary": "Model info"}},
+            "/api/optimize": {"post": {"summary": "Optimize recovery rate and economic savings"}},
+            "/api/emissions": {"post": {"summary": "Predict CO2 emissions in tons"}},
+        }
+    })
+
+
 if __name__ == "__main__":
     load_models()
     app.run(host="0.0.0.0", port=5011, debug=False)
